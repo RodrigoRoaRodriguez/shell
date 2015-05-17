@@ -11,23 +11,30 @@ int main()
 {
   pid_t pidPrintenv, pidFilter;
   int pipa[2], status;
+  int pid;
 
   pipe(pipa);
 
   printf("pipa0 %d pip1 %d\n", pipa[READ], pipa[WRITE]);
-  if((pidPrintenv = fork())== 0) //printenv process
+
+  pid = fork();
+
+
+  if( pid == 0) //printenv process
   {
     dup2(pipa[WRITE], WRITE);
     close(pipa[WRITE]);
+    close(pipa[READ]);
     execlp("printenv", "printenv", NULL);
     exit(0); // Close pipe so that results are printed
   }
-  if((pidFilter = fork())==0)//filter process
+  if(pid != 0)//filter process
   {
-    dup2(pipa[READ], READ);
     close(pipa[WRITE]);
+    dup2(pipa[READ], READ);
     close(pipa[READ]);
-    execlp("./filter","./filter",NULL);
+    execlp("sort","sort",NULL);
+    exit(0);
 
   }
   wait(&status);
