@@ -1,3 +1,6 @@
+# Everything without a file extension
+!*.*
+
 # Object files
 *.o
 *.ko
