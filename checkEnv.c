@@ -35,7 +35,7 @@ int handle_error(int ret_value, char * error_msg, int exit_code){
 int main(int argc, char **argv, char **envp)
 {
   int pipa[3][2];
-  int status, i;
+  int status;
   bool grep_vars = (argc > 1 ? true : false);
 
   handle_error(pipe(pipa[PRINTENV_GREP]), "Failed to create pipe", 1);
@@ -136,4 +136,6 @@ int main(int argc, char **argv, char **envp)
   if(grep_vars) handle_error(wait(&status), "Failed to wait for grep process", 1);
   handle_error(wait(&status), "Failed to wait for sort process", 1);
   handle_error(wait(&status), "Failed to wait for pager process", 1);
+
+  return 0;
 }

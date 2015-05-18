@@ -1,1 +1,1 @@
-gcc -ansi -pedantic -O4 -o checkEnv checkEnv.c
+gcc -ansi -pedantic -Wall -O4 -o checkEnv checkEnv.c
