@@ -62,9 +62,7 @@ int main(int argc, char **argv)
     pipe_in(pipa[PRINTENV_GREP]);
     pipe_out(pipa[GREP_SORT]);
 
-    /* TODO DOUBLE CHECK IF WE ARE ALLOWED TO DO SO */
-    argv[0] = "grep";
-    execvp("grep", argv);
+    execlp("grep", "grep", argv[1], NULL);
 
     perror("THIS MEANS THAT WE FAILED TO EXECUTE PRINTENV");
     exit(1); /* error no */
