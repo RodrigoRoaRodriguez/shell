@@ -4,68 +4,63 @@
 #include <sys/wait.h>
 #include <stdio.h>
 #include <errno.h>
+#include <string.h>
 
-/* STDIN_FILENO */
-#define READ 0
-/* STDOUT_FILENO */
-#define WRITE 1
+/* File descriptors */
+#define READ 0 /* STDIN */
+#define WRITE 1 /* STDOUT */
 
 /* PIPE INDEX */
 #define PRINTENV_GREP 0
 #define GREP_SORT 1
 #define SORT_PAGER 2
 
-
-/* a bool is a byte containing either 0 or 1
-   names are given to those two values as follows:
-   1 is called true, 0 is called false.
-   */
-#define bool unsigned char
-#define true 1
-#define false 0
-
-int handle_error(int ret_value, char * error_msg, int exit_code){
+int handle_error(int ret_value, char * error_msg){
   if(ret_value<0){
     perror(error_msg);
-    exit(exit_code);
+    exit(1);
   }
   return ret_value;
 }
 
-int main(int argc, char **argv, char **envp)
+void pipe_in(int * pipa) {
+  handle_error(close(pipa[WRITE]), "Failed to close incoming pipe for ");
+  handle_error(dup2(pipa[READ], READ), "Failed to incoming duplicate fd for ");
+  handle_error(close(pipa[READ]), "Failed to close incoming pipe for ");
+}
+
+void pipe_out(int * pipa) {
+  handle_error(close(pipa[READ]), "Failed to close outgoing pipe for ");
+  handle_error(dup2(pipa[WRITE], WRITE), "Failed to outgoing duplicate fd for ");
+  handle_error(close(pipa[WRITE]), "Failed to close outgoing pipe for ");
+}
+
+int main(int argc, char **argv)
 {
   int pipa[3][2];
   int status;
-  bool grep_vars = (argc > 1 ? true : false);
+  char grep_vars = argc > 1;
 
-  handle_error(pipe(pipa[PRINTENV_GREP]), "Failed to create pipe", 1);
-  handle_error(pipe(pipa[GREP_SORT]), "Failed to create pipe", 1);
-  handle_error(pipe(pipa[SORT_PAGER]), "Failed to create pipe", 1);
+  handle_error(pipe(pipa[PRINTENV_GREP]), "Failed to create pipe");
+  handle_error(pipe(pipa[GREP_SORT]), "Failed to create pipe");
+  handle_error(pipe(pipa[SORT_PAGER]), "Failed to create pipe");
 
   /* printenv */
-  if( 0 == handle_error(fork(), "Failed to fork for printenv", 1) ) /* printenv process */
+  if( 0 == handle_error(fork(), "Failed to fork for printenv") ) /* printenv process */
   {
-    handle_error(close(pipa[PRINTENV_GREP][READ]), "Failed to close pipe", 1);
-
-    handle_error(dup2(pipa[PRINTENV_GREP][WRITE], WRITE), "Failed to duplicate fd", 1);
-    handle_error(close(pipa[PRINTENV_GREP][WRITE]), "Failed to close pipe", 1);
+    pipe_out(pipa[PRINTENV_GREP]);
 
     execlp("printenv", "printenv", NULL);
-    
+
     perror("THIS MEANS THAT WE FAILED TO EXECUTE PRINTENV");
     exit(1); /* error no */
   }
 
   /* grep */
-  if(grep_vars && 0 == handle_error(fork(), "Failed to fork for grep", 1) ) /* grep process */
+  if(grep_vars && 0 == handle_error(fork(), "Failed to fork for grep") ) /* grep process */
   {
-    handle_error(close(pipa[PRINTENV_GREP][WRITE]), "Failed to close pipe", 1);
-    handle_error(dup2(pipa[PRINTENV_GREP][READ], READ), "Failed to duplicate fd", 1);
-    handle_error(close(pipa[PRINTENV_GREP][READ]), "Failed to close pipe", 1);
-
-    handle_error(close(pipa[GREP_SORT][READ]), "Failed to close pipe", 1);
-    handle_error(dup2(pipa[GREP_SORT][WRITE], WRITE), "Failed to duplicate fd.", 1);
-    handle_error(close(pipa[GREP_SORT][WRITE]), "Failed to close pipe", 1);
+    pipe_in(pipa[PRINTENV_GREP]);
+    pipe_out(pipa[GREP_SORT]);
 
     /* TODO DOUBLE CHECK IF WE ARE ALLOWED TO DO SO */
     argv[0] = "grep";
@@ -77,26 +72,21 @@ int main(int argc, char **argv, char **envp)
 
   /* close pipes */
   if(grep_vars){
-    handle_error(close(pipa[PRINTENV_GREP][READ]), "Failed to close pipe", 1);
-    handle_error(close(pipa[PRINTENV_GREP][WRITE]), "Failed to close pipe", 1);
+    handle_error(close(pipa[PRINTENV_GREP][READ]), "Failed to close pipe");
+    handle_error(close(pipa[PRINTENV_GREP][WRITE]), "Failed to close pipe");
   }else{
-    handle_error(close(pipa[GREP_SORT][WRITE]), "Failed to close pipe", 1);
-    handle_error(close(pipa[GREP_SORT][READ]), "Failed to close pipe", 1);
+    handle_error(close(pipa[GREP_SORT][WRITE]), "Failed to close pipe");
+    handle_error(close(pipa[GREP_SORT][READ]), "Failed to close pipe");
     pipa[GREP_SORT][READ] = pipa[PRINTENV_GREP][READ];
     pipa[GREP_SORT][WRITE] = pipa[PRINTENV_GREP][WRITE];
   }
 
   /* sort */
-  if( 0 == handle_error(fork(), "Failed to fork for sort", 1) ) /* sort process */
+  if( 0 == handle_error(fork(), "Failed to fork for sort") ) /* sort process */
   {
-    handle_error(close(pipa[GREP_SORT][WRITE]), "Failed to close pipe", 1);
-    handle_error(dup2(pipa[GREP_SORT][READ], READ), "Failed to duplicate fd", 1);
-    handle_error(close(pipa[GREP_SORT][READ]), "Failed to close pipe", 1);
+    pipe_in(pipa[GREP_SORT]);
+    pipe_out(pipa[SORT_PAGER]);
 
-    handle_error(close(pipa[SORT_PAGER][READ]), "Failed to close pipe", 1);
-    handle_error(dup2(pipa[SORT_PAGER][WRITE], WRITE), "Failed to duplicate fd.", 1);
-    handle_error(close(pipa[SORT_PAGER][WRITE]), "Failed to close pipe", 1);
-    
     execlp("sort", "sort", NULL);
 
     perror("THIS MEANS THAT WE FAILED TO EXECUTE SORT");
@@ -104,18 +94,16 @@ int main(int argc, char **argv, char **envp)
   }
 
   /* close pipes */
-  handle_error(close(pipa[GREP_SORT][WRITE]), "Failed to close pipe", 1);
-  handle_error(close(pipa[GREP_SORT][READ]), "Failed to close pipe", 1);
+  handle_error(close(pipa[GREP_SORT][WRITE]), "Failed to close pipe");
+  handle_error(close(pipa[GREP_SORT][READ]), "Failed to close pipe");
 
   /* pager */
-  if( 0 == handle_error(fork(), "Failed to fork for pager", 1) ) /* pager process */
+  if( 0 == handle_error(fork(), "Failed to fork for pager") ) /* pager process */
   {
     char * pager;
-    
-    handle_error(close(pipa[SORT_PAGER][WRITE]), "Failed to close pipe", 1);
-    handle_error(dup2(pipa[SORT_PAGER][READ], READ), "Failed to duplicate fd", 1);
-    handle_error(close(pipa[SORT_PAGER][READ]), "Failed to close pipe", 1);
-    
+
+    pipe_in(pipa[SORT_PAGER]);
+
     if((pager = getenv("PAGER")) != NULL){
       execlp(pager, pager, NULL);
     }
@@ -125,17 +113,17 @@ int main(int argc, char **argv, char **envp)
 
     perror("THIS MEANS THAT WE FAILED TO EXECUTE ANY PAGER");
     exit(1); /* error no */
-  } 
+  }
 
   /* close pipes */
-  handle_error(close(pipa[SORT_PAGER][WRITE]), "Failed to close pipe", 1);
-  handle_error(close(pipa[SORT_PAGER][READ]), "Failed to close pipe", 1);
+  handle_error(close(pipa[SORT_PAGER][WRITE]), "Failed to close pipe");
+  handle_error(close(pipa[SORT_PAGER][READ]), "Failed to close pipe");
 
   /* Wait for childs */
-  handle_error(wait(&status), "Failed to wait for printenv process", 1);
-  if(grep_vars) handle_error(wait(&status), "Failed to wait for grep process", 1);
-  handle_error(wait(&status), "Failed to wait for sort process", 1);
-  handle_error(wait(&status), "Failed to wait for pager process", 1);
+  handle_error(wait(&status), "Failed to wait for printenv process");
+  if(grep_vars) handle_error(wait(&status), "Failed to wait for grep process");
+  handle_error(wait(&status), "Failed to wait for sort process");
+  handle_error(wait(&status), "Failed to wait for pager process");
 
   return 0;
 }
