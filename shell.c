@@ -1,4 +1,3 @@
-#define _GNU_SOURCE
 #include <unistd.h>
 #include <stdlib.h>
 #include <sys/types.h>
@@ -7,13 +6,14 @@
 #include <errno.h>
 #include <string.h>
 #include <signal.h>
+#include <limits.h>
 
-#define SIGDET=1
+#define SIGDET 1
 
 #define MAX_CHARS 80
 
 char * checkEnv_path;
-char * current_path;
+char current_path[PATH_MAX];
 int num_args;
 int child_pid;
 
@@ -33,13 +33,13 @@ void forker(char **argv)
 
 	if ( 0 == child_pid)
 	{
-		printf("CHILD with PID = %d started\n", getpid());
+		printf("\nCHILD with PID = %d started\n", getpid());
 		/* Only run in child-process */
 		execvp(argv[0], argv);
 		printf("%s: command not found\n", argv[0]);
 	}
 
-	if(bg) { signal(SIGINT, cleanup); wait(&status); } 
+	if(bg) { signal(SIGINT, cleanup); wait(&status); }
 	else signal(SIGINT, SIG_IGN);
 
 	/* waitpid(-1, &status, 0);*/
@@ -49,27 +49,27 @@ int execute(char **argv){
 	if(0 == strcmp(argv[0], "exit")){
 		/* TODO SIGQUIT, */
 		return 1;
-	}else if(0 == strcmp(argv[0], "checkEnv")){ 
+	}else if(0 == strcmp(argv[0], "checkEnv")){
 		int status;
 		child_pid = fork();
 
 		if ( 0 == child_pid ){
-			printf("CHILD with PID = %d started\n", getpid());
+			printf("\nCHILD with PID = %d started\n", getpid());
 			execl(checkEnv_path, checkEnv_path, argv[1]);
 		}
-		if(0 != strcmp(argv[num_args-1],"&")) { signal(SIGINT, cleanup); wait(&status); } 
+		if(0 != strcmp(argv[num_args-1],"&")) { signal(SIGINT, cleanup); wait(&status); }
 		else signal(SIGINT, SIG_IGN);
 	}else if(0 == strcmp(argv[0], "cd")){
 
 		if(0 == strcmp(argv[1], "~")){
 			if(0 != chdir(getenv("PWD"))){
-				printf("shell: dude, you're in serious trouble, home was set to: %s\n", getenv("PWD"));
+				printf("shell: dude, you're in serious trouble, working directory was set to: %s\n", getenv("PWD"));
 			}
 		}else{
-			char * new_path = malloc(strlen(get_current_dir_name())+strlen(argv[1])+1);
-			strcpy (new_path, get_current_dir_name());
-			strcpy (new_path+strlen(get_current_dir_name()), "/");
-			strcpy (new_path+strlen(get_current_dir_name())+1, argv[1]);
+			char * new_path = malloc(strlen(getwd(current_path))+strlen(argv[1])+1);
+			strcpy (new_path, getwd(current_path));
+			strcpy (new_path+strlen(getwd(current_path)), "/");
+			strcpy (new_path+strlen(getwd(current_path))+1, argv[1]);
 
 			if(0 != chdir(new_path)){
 				printf("shell: cd: %s: No such file or directory\n", argv[1]);
@@ -118,7 +118,7 @@ int main(int argc, char **argv)
 	signal(SIGCHLD, handler);
 
 	while(1){
-		printf("%s# ", get_current_dir_name());
+		printf("%s# ", getwd(current_path));
 		num_args = 0;
 		args = malloc((sizeof(char *) * 41));
 		if(fgets ( input, MAX_CHARS, stdin) != NULL){
@@ -139,8 +139,10 @@ int main(int argc, char **argv)
 	free(args);
 	free(checkEnv_path);
 
+if(1 == SIGDET){
 	signal(SIGCHLD, SIG_IGN);
-	kill(0, SIGKILL); /* Why be nice when can be cruel */
-	
+	kill(0, SIGTERM);
+}
+
 	return 0;
 }
