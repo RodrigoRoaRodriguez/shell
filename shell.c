@@ -8,26 +8,40 @@
 #include <string.h>
 #include <signal.h>
 
+#define SIGDET=1
+
 #define MAX_CHARS 80
 
 char * checkEnv_path;
 char * current_path;
 int num_args;
+int child_pid;
+
+void cleanup(int);
 
 void forker(char **argv)
 {
 	int status;
-	int pid = fork();
+	char bg = 0;
 
-	if ( pid == 0 )
+	child_pid = fork();
+
+	if(0 == strcmp(argv[num_args-1],"&")){
+		bg = 1;
+		argv[num_args-1] = NULL;
+	}
+
+	if ( 0 == child_pid)
 	{
+		printf("CHILD with PID = %d started\n", getpid());
 		/* Only run in child-process */
 		execvp(argv[0], argv);
 		printf("%s: command not found\n", argv[0]);
 	}
 
-	if(0 != strcmp(argv[num_args-1],"&"))
-		wait(&status);
+	if(bg) { signal(SIGINT, cleanup); wait(&status); } 
+	else signal(SIGINT, SIG_IGN);
+
 	/* waitpid(-1, &status, 0);*/
 }
 
@@ -37,12 +51,14 @@ int execute(char **argv){
 		return 1;
 	}else if(0 == strcmp(argv[0], "checkEnv")){ 
 		int status;
-		int pid = fork();
+		child_pid = fork();
 
-		if ( pid == 0 )
+		if ( 0 == child_pid ){
+			printf("CHILD with PID = %d started\n", getpid());
 			execl(checkEnv_path, checkEnv_path, argv[1]);
-
-		wait(&status);
+		}
+		if(0 != strcmp(argv[num_args-1],"&")) { signal(SIGINT, cleanup); wait(&status); } 
+		else signal(SIGINT, SIG_IGN);
 	}else if(0 == strcmp(argv[0], "cd")){
 
 		if(0 == strcmp(argv[1], "~")){
@@ -67,6 +83,21 @@ int execute(char **argv){
 	return 0;
 }
 
+void handler(int dummy){
+	int status;
+	wait(&status);
+	printf("\nA child just terminated with return value: %d\n", status);
+}
+
+/*
+ * cleanup: to be executed by parent when user types CTRL-C.
+ */
+void cleanup(int dummy)
+{
+  printf("\nPARENT %d got SIGINT. Kill child %d\n\n", getpid(), child_pid);
+  kill(child_pid, SIGKILL);                   /* Kill child process */
+}
+
 int main(int argc, char **argv)
 {
 	char input [MAX_CHARS];
@@ -83,14 +114,14 @@ int main(int argc, char **argv)
 	strcpy (current_path, getenv("PWD"));
 */
 
-	signal(SIGTERM, SIG_IGN);
+	signal(SIGINT, SIG_IGN);
+	signal(SIGCHLD, handler);
 
-	while(123){
+	while(1){
 		printf("%s# ", get_current_dir_name());
 		num_args = 0;
+		args = malloc((sizeof(char *) * 41));
 		if(fgets ( input, MAX_CHARS, stdin) != NULL){
-			args = malloc((sizeof(char *) * 41));
-
 			args[0] = strtok (input," \n");
 
 			/* Count tokens*/
@@ -101,16 +132,15 @@ int main(int argc, char **argv)
 			}
 
 			if(num_args > 0 && execute(args)){
-				free(args);
 				break;
-			}else{
-				free(args);
 			}
 		}
 	}
+	free(args);
 	free(checkEnv_path);
 
-	kill(getpid(), SIGTERM);
-
+	signal(SIGCHLD, SIG_IGN);
+	kill(0, SIGKILL); /* Why be nice when can be cruel */
+	
 	return 0;
 }
