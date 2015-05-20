@@ -66,10 +66,10 @@ int execute(char **argv){
 				printf("shell: dude, you're in serious trouble, working directory was set to: %s\n", getenv("PWD"));
 			}
 		}else{
-			char * new_path = malloc(strlen(getwd(current_path))+strlen(argv[1])+1);
-			strcpy (new_path, getwd(current_path));
-			strcpy (new_path+strlen(getwd(current_path)), "/");
-			strcpy (new_path+strlen(getwd(current_path))+1, argv[1]);
+			char * new_path = malloc(strlen(get_current_dir_name())+strlen(argv[1])+1);
+			strcpy (new_path, get_current_dir_name());
+			strcpy (new_path+strlen(get_current_dir_name()), "/");
+			strcpy (new_path+strlen(get_current_dir_name())+1, argv[1]);
 
 			if(0 != chdir(new_path)){
 				printf("shell: cd: %s: No such file or directory\n", argv[1]);
@@ -118,7 +118,7 @@ int main(int argc, char **argv)
 	signal(SIGCHLD, handler);
 
 	while(1){
-		printf("%s# ", getwd(current_path));
+		printf("%s# ", get_current_dir_name());
 		num_args = 0;
 		args = malloc((sizeof(char *) * 41));
 		if(fgets ( input, MAX_CHARS, stdin) != NULL){
